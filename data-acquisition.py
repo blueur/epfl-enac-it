@@ -8,10 +8,17 @@ import rasterio
 from scipy.interpolate import griddata
 
 
+def greater_than_zero(image: ee.Image):
+    return image.gt(ee.Image.constant(0))
+
+
 def get_precipitations():
     ee.Initialize()
     area = geemap.shp_to_ee("data/aoi.shp")
-    chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY").filter(ee.Filter.date('2020-12-01', '2020-12-02'))
+    chirps = ee.ImageCollection(ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+                                .filter(ee.Filter.date('2020-01-01', '2021-01-01'))
+                                .map(greater_than_zero)
+                                .sum())
     # https://developers.google.com/earth-engine/apidocs/ee-imagecollection-getregion
     data = chirps.getRegion(area, 10000).getInfo()
     data_frame = pd.DataFrame.from_records(data[1:], columns=data[0])
