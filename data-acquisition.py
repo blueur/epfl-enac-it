@@ -5,50 +5,56 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import rasterio
-from scipy.interpolate import griddata
 
 
 def greater_than_zero(image: ee.Image):
     return image.gt(ee.Image.constant(0))
 
 
-def get_precipitations():
+def get_precipitations(scale=1000) -> pd.DataFrame:
     ee.Initialize()
     area = geemap.shp_to_ee("data/aoi.shp")
-    chirps = ee.ImageCollection(ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
-                                .filter(ee.Filter.date('2020-01-01', '2021-01-01'))
-                                .map(greater_than_zero)
-                                .sum())
+    image = (ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+             # .filter(ee.Filter.geometry(area))
+             .filter(ee.Filter.date('2020-01-01', '2020-02-01'))
+             .map(greater_than_zero)
+             .sum())
+    image_collection = ee.ImageCollection(image)
     # https://developers.google.com/earth-engine/apidocs/ee-imagecollection-getregion
-    data = chirps.getRegion(area, 10000).getInfo()
+    region = image_collection.getRegion(geometry=area, scale=scale)
+    data = region.getInfo()
     data_frame = pd.DataFrame.from_records(data[1:], columns=data[0])
     print(data_frame)
-    print(data_frame['precipitation'].max())
     return data_frame
 
 
-def export_raster(data):
+def export_raster(array: np.ndarray) -> None:
     profile = rasterio.profiles.DefaultGTiffProfile(count=1)
     print(profile)
-    data = data * 8  # FIXME
-    with rasterio.open('output.tif', 'w', height=data.shape[0], width=data.shape[1], **profile) as dst:
-        dst.write(data, 1)
+    array = array * 8  # FIXME
+    with rasterio.open('output.tif', 'w', height=array.shape[0], width=array.shape[1], **profile) as dst:
+        dst.write(array.astype(np.uint8), 1)
 
 
-def show_data(data, resolution=0.01):
-    # https://www.hatarilabs.com/ih-en/how-to-create-a-geospatial-raster-from-xy-data-with-python-pandas-and-rasterio-tutorial
-    points = list(zip(data['longitude'].tolist(), data['latitude'].tolist()))
-    values = data['precipitation'].tolist()
-    x_range = np.arange(data['longitude'].min(), data['longitude'].max() + resolution, resolution)
-    y_range = np.arange(data['latitude'].min(), data['latitude'].max() + resolution, resolution)
-    x_grid, y_grid = np.meshgrid(x_range, y_range)
-    data_grid = griddata(points, values, (x_grid, y_grid), method='linear')
+def show_raster(array: np.ndarray) -> None:
     plt.ion()
-    plt.imshow(data_grid)
+    plt.imshow(array)
     plt.ioff()
     plt.show()
 
 
+def get_grid(data: pd.DataFrame) -> np.ndarray:
+    # https://www.hatarilabs.com/ih-en/how-to-create-a-geospatial-raster-from-xy-data-with-python-pandas-and-rasterio-tutorial
+    array = (data
+             .pivot(index='latitude', columns='longitude', values='precipitation')
+             .sort_index(ascending=False))
+    print(array)
+    return array.to_numpy()
+
+
 # arr = np.random.randint(30, size=(100,100)).astype(np.uint8)
+
 precipitations = get_precipitations()
-show_data(precipitations)
+grid = get_grid(precipitations)
+export_raster(grid)
+show_raster(grid)
