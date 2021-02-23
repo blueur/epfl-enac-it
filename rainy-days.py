@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Tuple, List
+from typing import Tuple
 
 import ee
 import numpy as np
@@ -15,8 +15,6 @@ from dateutil.relativedelta import relativedelta
 
 CHIRPS_DAILY = 'UCSB-CHG/CHIRPS/DAILY'
 NAN_INT = -1
-YEAR_MONTH_FORMAT = '%Y-%m'
-YEAR_MONTH_DAY_FORMAT = f'{YEAR_MONTH_FORMAT}-%d'
 
 logger = logging.getLogger(__name__)
 
@@ -30,27 +28,24 @@ def get_area(shp_filename) -> ee.FeatureCollection:
         return ee.FeatureCollection(shp.__geo_interface__)
 
 
-def get_precipitations(area: ee.FeatureCollection, scale, start: str, end: str) -> pd.DataFrame:
-    image = (ee.ImageCollection(CHIRPS_DAILY)
-             .filter(ee.Filter.date(start, end))
-             .map(greater_than_zero)
-             .sum())
+def get_monthly_precipitations(area: ee.FeatureCollection, scale, month: int, min_year: int,
+                               max_year: int) -> pd.DataFrame:
+    # https://developers.google.com/earth-engine/apidocs/ee-filter-calendarrange
+    images = [(ee.ImageCollection(CHIRPS_DAILY)
+               .filter(ee.Filter.calendarRange(month, month, 'month'))
+               .filter(ee.Filter.calendarRange(year, year, 'year'))
+               .map(greater_than_zero)
+               .sum()) for year in range(min_year, max_year)]
+    image = ee.ImageCollection.fromImages(images).mean()
     image_collection = ee.ImageCollection(image)
     # https://developers.google.com/earth-engine/apidocs/ee-imagecollection-getregion
     region = image_collection.getRegion(geometry=area, scale=scale)
-    logger.info(f'getting image from {start} to {end}')
+    logger.info(f'getting image {month} from {min_year} to {max_year}')
     start_time = time.time()
     data = region.getInfo()
     data_frame = pd.DataFrame.from_records(data[1:], columns=data[0])
     logger.info(f'received {data_frame.size:,} coordinates in {time.time() - start_time:0.3f} seconds')
     return data_frame
-
-
-def get_monthly_precipitations(area: ee.FeatureCollection, scale, year_month: pd.Period) -> pd.DataFrame:
-    timestamp = year_month.to_timestamp(how='S')
-    start = timestamp.strftime(YEAR_MONTH_DAY_FORMAT)
-    end = (timestamp + pd.DateOffset(months=1)).strftime(YEAR_MONTH_DAY_FORMAT)
-    return get_precipitations(area=area, scale=scale, start=start, end=end)
 
 
 def export_intarray_to_raster(array: np.ndarray, affine: Affine, filename: str) -> str:
@@ -65,7 +60,8 @@ def export_intarray_to_raster(array: np.ndarray, affine: Affine, filename: str) 
 
 def export_array_to_raster(array: np.ndarray, affine: Affine, filename: str) -> str:
     array[np.isnan(array)] = NAN_INT
-    return export_intarray_to_raster(array.astype(np.int8), affine, filename)
+    intarray = np.around(array).astype(np.int8)
+    return export_intarray_to_raster(intarray, affine, filename)
 
 
 def get_affine(longitudes: pd.Float64Index, latitudes: pd.Float64Index) -> Affine:
@@ -86,15 +82,12 @@ def get_array(data: pd.DataFrame) -> Tuple[np.ndarray, Affine]:
     return array, affine
 
 
-def get_year_months(start: str, end: str) -> List[pd.Period]:
-    return pd.period_range(start=start, end=end, freq='M')[:-1]
-
-
-def compute_monthly(shp: str, scale: int, start: str, end: str, output: str):
+def compute_monthly(shp: str, scale: int, min_year: int, max_year: int, output: int):
     area = get_area(shp)
-    for year_month in get_year_months(start=start, end=end):
-        filename = os.path.join(output, f'{year_month.strftime(YEAR_MONTH_FORMAT)}.tif')
-        precipitations = get_monthly_precipitations(area=area, scale=scale, year_month=year_month)
+    for month in range(1, 13):
+        filename = os.path.join(output, f'{month:02d}.tif')
+        precipitations = get_monthly_precipitations(area=area, scale=scale, month=month,
+                                                    min_year=min_year, max_year=max_year)
         array, affine = get_array(precipitations)
         export_array_to_raster(array, affine, filename)
 
@@ -107,18 +100,23 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('shp', type=str,
                         help='shapefile location')
-    parser.add_argument('--scale', type=int, default=1000,
+    parser.add_argument('--scale', type=int,
+                        default=1000,
                         help='scale in meters')
-    parser.add_argument('--output', type=str, default='output',
+    parser.add_argument('--output', type=str,
+                        default='output',
                         help='output folder')
-    parser.add_argument('--start', type=str,
-                        default=(datetime_now - relativedelta(years=1)).strftime(YEAR_MONTH_FORMAT),
-                        help='included starting month (YYYY-MM)')
-    parser.add_argument('--end', type=str, default=datetime_now.strftime(YEAR_MONTH_FORMAT),
-                        help='excluded ending month (YYYY-MM)')
+    parser.add_argument('--start', type=int,
+                        default=(datetime_now - relativedelta(years=20)).year,
+                        help='included starting year')
+    parser.add_argument('--end', type=int,
+                        default=datetime_now.year,
+                        help='excluded ending year')
     parser.add_argument('--auth', action=argparse.BooleanOptionalAction,
+                        default=False,
                         help='Google Earth Engine authentication')
     parser.add_argument('--debug', action=argparse.BooleanOptionalAction,
+                        default=False,
                         help='activate debug logs')
 
     args = parser.parse_args()
@@ -130,13 +128,11 @@ def main():
         ee.Authenticate()
     ee.Initialize()
     os.makedirs(args.output, exist_ok=True)
-    datetime.strptime(args.start, YEAR_MONTH_FORMAT)
-    datetime.strptime(args.end, YEAR_MONTH_FORMAT)
 
     compute_monthly(shp=args.shp,
                     scale=args.scale,
-                    start=args.start,
-                    end=args.end,
+                    min_year=args.start,
+                    max_year=args.end,
                     output=args.output)
 
 
