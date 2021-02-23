@@ -30,9 +30,7 @@ def get_area(shp_filename) -> ee.FeatureCollection:
         return ee.FeatureCollection(shp.__geo_interface__)
 
 
-def get_precipitations(shp: str, scale, start: str, end: str) -> pd.DataFrame:
-    ee.Initialize()
-    area = get_area(shp)
+def get_precipitations(area: ee.FeatureCollection, scale, start: str, end: str) -> pd.DataFrame:
     image = (ee.ImageCollection(CHIRPS_DAILY)
              .filter(ee.Filter.date(start, end))
              .map(greater_than_zero)
@@ -48,15 +46,15 @@ def get_precipitations(shp: str, scale, start: str, end: str) -> pd.DataFrame:
     return data_frame
 
 
-def get_monthly_precipitations(shp: str, scale, year_month: pd.Period) -> pd.DataFrame:
+def get_monthly_precipitations(area: ee.FeatureCollection, scale, year_month: pd.Period) -> pd.DataFrame:
     timestamp = year_month.to_timestamp(how='S')
     start = timestamp.strftime(YEAR_MONTH_DAY_FORMAT)
     end = (timestamp + pd.DateOffset(months=1)).strftime(YEAR_MONTH_DAY_FORMAT)
-    return get_precipitations(shp=shp, scale=scale, start=start, end=end)
+    return get_precipitations(area=area, scale=scale, start=start, end=end)
 
 
 def export_intarray_to_raster(array: np.ndarray, affine: Affine, filename: str) -> str:
-    profile = rasterio.profiles.DefaultGTiffProfile(count=1, dtype=array.dtype)
+    profile = rasterio.profiles.DefaultGTiffProfile(count=1, dtype=array.dtype, nodata=NAN_INT)
     height = array.shape[0]
     width = array.shape[1]
     logger.info(f'saving {filename} ({width} x {height})')
@@ -93,9 +91,10 @@ def get_year_months(start: str, end: str) -> List[pd.Period]:
 
 
 def compute_monthly(shp: str, scale: int, start: str, end: str, output: str):
+    area = get_area(shp)
     for year_month in get_year_months(start=start, end=end):
         filename = os.path.join(output, f'{year_month.strftime(YEAR_MONTH_FORMAT)}.tif')
-        precipitations = get_monthly_precipitations(shp=shp, scale=scale, year_month=year_month)
+        precipitations = get_monthly_precipitations(area=area, scale=scale, year_month=year_month)
         array, affine = get_array(precipitations)
         export_array_to_raster(array, affine, filename)
 
@@ -104,7 +103,7 @@ def main():
     logging.basicConfig(format='%(asctime)s %(levelname)s %(name)s: %(message)s', level=logging.INFO)
     datetime_now = datetime.now()
 
-    parser = argparse.ArgumentParser(description='compute number of monthly rainy days on a given area',
+    parser = argparse.ArgumentParser(description='Compute number of monthly rainy days on a given area.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('shp', type=str,
                         help='shapefile location')
@@ -117,6 +116,8 @@ def main():
                         help='included starting month (YYYY-MM)')
     parser.add_argument('--end', type=str, default=datetime_now.strftime(YEAR_MONTH_FORMAT),
                         help='excluded ending month (YYYY-MM)')
+    parser.add_argument('--auth', action=argparse.BooleanOptionalAction,
+                        help='Google Earth Engine authentication')
     parser.add_argument('--debug', action=argparse.BooleanOptionalAction,
                         help='activate debug logs')
 
@@ -125,6 +126,9 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
+    if args.auth:
+        ee.Authenticate()
+    ee.Initialize()
     os.makedirs(args.output, exist_ok=True)
     datetime.strptime(args.start, YEAR_MONTH_FORMAT)
     datetime.strptime(args.end, YEAR_MONTH_FORMAT)

@@ -14,7 +14,7 @@ def display_rasters(filenames: List[str]) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='display raster files',
+    parser = argparse.ArgumentParser(description='Display raster files.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--output', type=str, default='output',
                         help='output folder')
