@@ -3,16 +3,15 @@ import time
 from typing import Tuple
 
 import ee
-# import shapefile
-import geemap
 import numpy as np
 import pandas as pd
 import rasterio
+import shapefile
 from affine import Affine
 from rasterio.plot import show
 
 CHIRPS_DAILY = 'UCSB-CHG/CHIRPS/DAILY'
-INT_NAN = -1
+NAN_INT = -1
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +20,14 @@ def greater_than_zero(image: ee.Image):
     return image.gt(ee.Image.constant(0))
 
 
-def get_precipitations(scale=1000, start='2020-01-01', end='2021-01-01') -> pd.DataFrame:
+def get_area(shp_filename) -> ee.FeatureCollection:
+    with shapefile.Reader(shp_filename) as shp:
+        return ee.FeatureCollection(shp.__geo_interface__)
+
+
+def get_precipitations(scale=1000, start='2020-01-01', end='2021-01-01', shp='data/aoi.shp') -> pd.DataFrame:
     ee.Initialize()
-    area = geemap.shp_to_ee('data/aoi.shp')
+    area = get_area(shp)
     image = (ee.ImageCollection(CHIRPS_DAILY)
              .filter(ee.Filter.date(start, end))
              .map(greater_than_zero)
@@ -49,7 +53,7 @@ def export_intarray_to_raster(array: np.ndarray, affine: Affine, filename: str) 
 
 
 def export_array_to_raster(array: np.ndarray, affine: Affine, filename: str) -> None:
-    array[np.isnan(array)] = INT_NAN
+    array[np.isnan(array)] = NAN_INT
     export_intarray_to_raster(array.astype(np.int8), affine, filename)
 
 
