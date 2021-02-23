@@ -33,14 +33,14 @@ python rainy-days.py -h
 
 Default output folder: ./output
 
-## display-tif
+## raster-viewer
 
-Display raster files.
+View raster files.
 
 ```bash
 # run script
-python display-tif.py
+python raster-viewer.py
 
 # see help for more options and see defaults
-python display-tif.py -h
+python raster-viewer.py -h
 ```
