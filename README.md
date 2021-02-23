@@ -33,6 +33,24 @@ python rainy-days.py -h
 
 Default output folder: ./output
 
+### Pipeline
+
+For each month:
+
+1. Get Image from Google Earth Engine with number of rainy days
+    1. Get ImageCollection from daily CHIRPS
+    2. Filter by dates (for one month)
+    3. Filter by area of interest
+    4. Check if there are any precipitations (> 0), returns 1 else 0
+    5. Sum all daily Images to get number of rainy days during the period
+2. Get coordinates along with their values given a scale (precision)
+3. Put coordinates into a Pandas.DataFrame
+4. Pivot the DataFrame with the coordinates to get a matrix of values
+5. Convert matrix into integers (NaN as -1)
+6. Save matrix into a raster
+    1. Set the geo transform to keep the coordinates
+    2. Set nodata to -1 in the metadata for the out of interest area
+
 ## raster-viewer
 
 View raster files.
