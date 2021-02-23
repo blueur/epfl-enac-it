@@ -63,3 +63,10 @@ python raster-viewer.py
 # see help for more options and see defaults
 python raster-viewer.py -h
 ```
+
+## Docker
+
+```bash
+docker build -t rainy-days:latest .
+docker run -it --rm -v D:\git\epfl-enac\data:/opt/data -v D:\git\epfl-enac\output:/opt/output rainy-days:latest python rainy-days.py data/aoi --auth
+```
