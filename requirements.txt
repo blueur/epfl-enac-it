@@ -2,4 +2,5 @@ affine~=2.3.0
 earthengine-api~=0.1.251
 numpy~=1.20.1
 pandas~=1.2.2
+python-dateutil~=2.8.1
 rasterio~=1.2.0
