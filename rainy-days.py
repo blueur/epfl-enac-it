@@ -19,28 +19,28 @@ NAN_INT = -1
 logger = logging.getLogger(__name__)
 
 
-def greater_than_zero(image: ee.Image):
+def greater_than_zero(image: ee.Image) -> ee.Image:
     return image.gt(ee.Image.constant(0))
 
 
-def get_area(shp_filename) -> ee.FeatureCollection:
+def get_area(shp_filename: str) -> ee.FeatureCollection:
     with shapefile.Reader(shp_filename) as shp:
         return ee.FeatureCollection(shp.__geo_interface__)
 
 
-def get_monthly_precipitations(area: ee.FeatureCollection, scale, month: int, min_year: int,
-                               max_year: int) -> pd.DataFrame:
+def get_monthly_precipitations(area: ee.FeatureCollection, scale: int, month: int,
+                               start_year: int, end_year: int) -> pd.DataFrame:
     # https://developers.google.com/earth-engine/apidocs/ee-filter-calendarrange
     images = [(ee.ImageCollection(CHIRPS_DAILY)
                .filter(ee.Filter.calendarRange(month, month, 'month'))
                .filter(ee.Filter.calendarRange(year, year, 'year'))
                .map(greater_than_zero)
-               .sum()) for year in range(min_year, max_year)]
+               .sum()) for year in range(start_year, end_year)]
     image = ee.ImageCollection.fromImages(images).mean()
     image_collection = ee.ImageCollection(image)
     # https://developers.google.com/earth-engine/apidocs/ee-imagecollection-getregion
     region = image_collection.getRegion(geometry=area, scale=scale)
-    logger.info(f'getting image {month} from {min_year} to {max_year}')
+    logger.info(f'getting image in year range [{start_year}, {end_year}[ with month {month}/12')
     start_time = time.time()
     data = region.getInfo()
     data_frame = pd.DataFrame.from_records(data[1:], columns=data[0])
@@ -82,12 +82,12 @@ def get_array(data: pd.DataFrame) -> Tuple[np.ndarray, Affine]:
     return array, affine
 
 
-def compute_monthly(shp: str, scale: int, min_year: int, max_year: int, output: int):
+def compute_monthly(shp: str, scale: int, start_year: int, end_year: int, output: str):
     area = get_area(shp)
     for month in range(1, 13):
         filename = os.path.join(output, f'{month:02d}.tif')
         precipitations = get_monthly_precipitations(area=area, scale=scale, month=month,
-                                                    min_year=min_year, max_year=max_year)
+                                                    start_year=start_year, end_year=end_year)
         array, affine = get_array(precipitations)
         export_array_to_raster(array, affine, filename)
 
@@ -96,7 +96,7 @@ def main():
     logging.basicConfig(format='%(asctime)s %(levelname)s %(name)s: %(message)s', level=logging.INFO)
     datetime_now = datetime.now()
 
-    parser = argparse.ArgumentParser(description='Compute number of monthly rainy days on a given area.',
+    parser = argparse.ArgumentParser(description='Compute number of average rainy days by month on a given area.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('shp', type=str,
                         help='shapefile location')
@@ -131,8 +131,8 @@ def main():
 
     compute_monthly(shp=args.shp,
                     scale=args.scale,
-                    min_year=args.start,
-                    max_year=args.end,
+                    start_year=args.start,
+                    end_year=args.end,
                     output=args.output)
 
 

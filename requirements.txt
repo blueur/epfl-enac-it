@@ -1,6 +1,5 @@
 affine==2.3.0
 earthengine-api==0.1.251
-matplotlib==3.3.4
 numpy==1.20.1
 pandas==1.2.2
 pyshp==2.1.3
