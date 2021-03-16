@@ -1,4 +1,4 @@
-# epfl-enac
+# epfl-enac-it
 
 ## Installation
 
